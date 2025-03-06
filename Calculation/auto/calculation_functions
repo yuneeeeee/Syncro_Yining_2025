@@ -1,0 +1,60 @@
+import pandas as pd
+import re
+import os
+import glob
+
+def extract_meta_columns(filepath):
+    """
+    Reads a CSV file, filters rows by 'Valid QC' (keeping only rows with 'T'), 
+    and extracts specific metadata columns:
+    'Experiment  full  Name', 'Experiment Date', 'Well ID', 'Valid QC', 'Cell Type', 'Cell Concentration'.
+    """
+    df = pd.read_csv(filepath, header=[0, 1])
+
+    # Extract headers
+    second_header = df.columns.get_level_values(1).str.strip()
+
+    # Columns to extract
+    meta_columns_to_extract = [
+        'Experiment  full  Name', 'Experiment Date', 'Well ID',
+        'Valid QC', 'Cell Type', 'Cell Concentration'
+    ]
+
+    # Extract and rename columns
+    meta_cols = [col for col, name in zip(df.columns, second_header) if name in meta_columns_to_extract]
+    df_meta = df[meta_cols]
+    df_meta.columns = meta_columns_to_extract
+
+    # Filter rows where 'Valid QC' is 'T'
+    if 'Valid QC' in df_meta.columns:
+        df_meta = df_meta[df_meta['Valid QC'].astype(str).str.strip().str.upper() == 'T']
+
+    return df_meta
+
+def calculate_max_cd_ac(data_dict, well_id, feature):
+    """Calculate the maximum absolute value for a specific feature across all sweeps of a well."""
+    values = [abs(v) for v in get_values_across_sweeps(data_dict, well_id, feature) if v is not None]
+    if values:
+        max_abs_value = max(values)
+        return -max_abs_value if max_abs_value != 0 else 0
+    return None
+
+def process_and_save_summary(filepath, data_dict):
+    """Combine metadata and calculation results into a single CSV file."""
+    df_meta = extract_meta_columns(filepath)
+    df_meta['TP1_Max_CurDen'] = df_meta['Well ID'].apply(lambda well_id: calculate_max_cd_ac(data_dict, well_id, 'TP1CurDen'))
+    df_meta['TP2_Max_CurDen'] = df_meta['Well ID'].apply(lambda well_id: calculate_max_cd_ac(data_dict, well_id, 'TP2CurDen'))
+
+    # Save to CSV
+    base_filename = os.path.basename(filepath)
+    output_filename = os.path.splitext(base_filename)[0] + '_summary.csv'
+    df_meta.to_csv(output_filename, index=False)
+    print(f"Summary saved to {output_filename}")
+
+if __name__ == "__main__":
+    from Dict_IV import process_all_files, get_values_across_sweeps
+
+    all_data = process_all_files()
+    if all_data:
+        for filepath, data_dict in all_data.items():
+            process_and_save_summary(filepath, data_dict)

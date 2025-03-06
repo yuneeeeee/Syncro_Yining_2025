@@ -53,7 +53,7 @@ def test_peak_current(df, cell_index, threshold):
     return value < threshold, value
 
 def test_pre_pulse_leak(df, cell_index, threshold):
-    pre_pulse = abs(pd.to_numeric(df['Sweep 001']['Leak prep'][cell_index], errors='coerce'))
+    pre_pulse = abs(pd.to_numeric(df['Sweep 001'][' Leak prep'][cell_index], errors='coerce'))
     value = pre_pulse * 1e12
     return value < threshold, value
 
@@ -78,6 +78,19 @@ def test_cap_mean(current_cell, lower_bound=4.5, upper_bound=50):
         return True, cap_values
     else:
         return False, cap_values
+    
+def test_rundown(current_cell, lower_bound=0.7, upper_bound=1.3):
+    rundown = pd.to_numeric(current_cell.xs(" Rundown", level=1, axis=0), errors='coerce').iloc[0]
+    return lower_bound <= rundown <= upper_bound, rundown
+
+
+
+
+def test_peak_c1(df, cell_index, threshold):
+    i_peak_list = pd.to_numeric(df.xs(' C 1', level=1, axis=1).iloc[cell_index], errors='coerce')
+    min_peak = i_peak_list.min()
+    value = abs(min_peak) * 1e12  # Convert to pA
+    return value >= threshold, value
 
 cell_qc_tests = {
     'Seal Resistance': 'test_seal_resistance',
@@ -92,6 +105,11 @@ iv_qc_tests = {
     'IV Jump': 'test_iv_jump',
     'Peak Current': 'test_peak_current',
     'Leak Steady': 'test_leak_steady'
+}
+
+recovery_qc_tests = {
+    "Rundown": "test_rundown",
+    "Peak C1": "test_peak_c1"
 }
 
 def run_cell_qc_tests(df, v_steps, thresholds):
@@ -139,6 +157,32 @@ def run_iv_qc_tests(df, v_steps, thresholds):
         }
         results.append(test_result)
     return pd.DataFrame(results)
+
+def run_recovery_qc_tests(df, thresholds):
+
+    results = []
+    for cell_index in range(len(df)):
+        current_cell = df.iloc[cell_index]
+
+        # Run Rundown test
+        rundown_result, rundown_value = test_rundown(current_cell, 
+                                                     lower_bound=thresholds.get("Rundown Lower", 0.8), 
+                                                     upper_bound=thresholds.get("Rundown Upper", 1.2))
+
+        # Run Peak C1 test
+        peak_c1_result, peak_c1_value = test_peak_c1(df, cell_index, threshold=thresholds.get("Peak C1", 300))
+
+        # Store results
+        test_result = {
+            'Rundown': int(rundown_result),
+            'Peak C1': int(peak_c1_result),
+            'Rundown Value': rundown_value,
+            'Peak C1 Value': peak_c1_value
+        }
+        results.append(test_result)
+
+    return pd.DataFrame(results)
+
 
 # def main(input_file, output_file,final_output_file):
 
